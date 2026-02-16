@@ -19,7 +19,7 @@ interface KeyBindings {
   h: Phaser.Input.Keyboard.Key;
 }
 
-type PlayState = 'playing' | 'won' | 'lost';
+type PlayState = 'playing' | 'boss_defeat' | 'won' | 'lost';
 
 export class GameScene extends Phaser.Scene {
   private readonly roomSize = { width: 960, height: 640 };
@@ -80,6 +80,13 @@ export class GameScene extends Phaser.Scene {
   private bossExitOpen = false;
   private level2Started = false;
   private level2TemplateLoaded = false;
+  private level2RoomsRemaining = 0;
+  private checkpointAfterBossDoor = false;
+  private escapeSpinTween: Phaser.Tweens.Tween | null = null;
+  private fastTrailNextAt = 0;
+  private winTrailNextAt = 0;
+  private winSparkleNextAt = 0;
+  private winPaintMarks: Phaser.GameObjects.Shape[] = [];
 
   private debugBodiesEnabled = false;
   private debugGraphics: Phaser.GameObjects.Graphics | null = null;
@@ -152,6 +159,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (this.state !== 'playing') {
+      if (this.state === 'won') {
+        this.updateWinCelebration();
+      }
       this.renderDebugBodies();
       this.updateDebug();
       return;
@@ -164,6 +174,10 @@ export class GameScene extends Phaser.Scene {
       this.player.setFlipX(this.bossBlob.x < this.player.x);
     } else if (Math.abs(playerBody.velocity.x) > 4) {
       this.player.setFlipX(playerBody.velocity.x < 0);
+    }
+    if (playerBody.velocity.length() > 520 && this.time.now >= this.fastTrailNextAt) {
+      this.fastTrailNextAt = this.time.now + 38;
+      this.spawnSpeedTrailGhost();
     }
 
     const playerPos = new Phaser.Math.Vector2(this.player.x, this.player.y);
@@ -300,6 +314,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private resetRunState(): void {
+    this.escapeSpinTween?.stop();
+    this.escapeSpinTween = null;
+    this.clearWinPaint();
+    this.fastTrailNextAt = 0;
+    this.winTrailNextAt = 0;
+    this.winSparkleNextAt = 0;
     this.state = 'playing';
     this.transitionCooldownUntil = 0;
     this.currentRoom = 0;
@@ -307,6 +327,8 @@ export class GameScene extends Phaser.Scene {
     this.bossExitOpen = false;
     this.level2Started = false;
     this.level2TemplateLoaded = false;
+    this.level2RoomsRemaining = 0;
+    this.checkpointAfterBossDoor = false;
 
     this.rng = new Rng(createRunSeed());
     this.roomEntrances = new Array(this.totalRooms).fill(null);
@@ -413,7 +435,7 @@ export class GameScene extends Phaser.Scene {
       this.triggerLose();
     });
 
-    if (this.currentRoom < this.totalRooms - 1) {
+    if (!this.level2TemplateLoaded && this.currentRoom < this.totalRooms - 1) {
       const trigger = this.roomManager.getDoorTrigger();
       if (trigger) {
         this.doorOverlap = this.physics.add.overlap(this.player, trigger, () => {
@@ -425,16 +447,28 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    if (this.bossExitOpen && this.bossExitTrigger) {
-      this.bossExitOverlap = this.physics.add.overlap(this.player, this.bossExitTrigger, () => {
-        if (this.state !== 'playing' || this.time.now < this.transitionCooldownUntil) {
-          return;
-        }
-        this.enterLevel2Room1();
-      });
-    }
-
-    if (this.level2PortalTrigger) {
+    if (this.bossExitOpen) {
+      const trigger = this.roomManager.getDoorTrigger();
+      if (trigger) {
+        this.bossExitOverlap = this.physics.add.overlap(this.player, trigger, () => {
+          if (this.state !== 'playing' || this.time.now < this.transitionCooldownUntil) {
+            return;
+          }
+          this.startMusic();
+          this.enterLevel2Room1();
+        });
+      }
+    } else if (this.level2Started && this.level2TemplateLoaded) {
+      const trigger = this.roomManager.getDoorTrigger();
+      if (trigger) {
+        this.level2PortalOverlap = this.physics.add.overlap(this.player, trigger, () => {
+          if (this.state !== 'playing' || this.time.now < this.transitionCooldownUntil) {
+            return;
+          }
+          this.advanceLevel2OrWin();
+        });
+      }
+    } else if (this.level2PortalTrigger) {
       this.level2PortalOverlap = this.physics.add.overlap(this.player, this.level2PortalTrigger, () => {
         if (this.state !== 'playing' || this.time.now < this.transitionCooldownUntil) {
           return;
@@ -509,6 +543,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private advanceRoom(): void {
+    if (this.level2TemplateLoaded) {
+      this.advanceLevel2OrWin();
+      return;
+    }
+
     if (this.level2Started && !this.level2TemplateLoaded) {
       this.enterLevel2Room1();
       return;
@@ -678,6 +717,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private warpToBossRoom(): void {
+    this.startMusic();
     this.currentRoom = this.totalRooms - 1;
     this.setup = buildRoomSetup(
       this.currentRoom,
@@ -763,6 +803,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.level2Started = true;
     this.level2TemplateLoaded = true;
+    this.level2RoomsRemaining = 0;
     this.currentRoom = 1;
     this.clearEnemies();
     this.setup = this.buildLevel2Room1Template();
@@ -773,6 +814,36 @@ export class GameScene extends Phaser.Scene {
     this.rebuildPhysics();
     this.transitionCooldownUntil = this.time.now + 350;
     this.updateDebug();
+  }
+
+  private buildBossEscapeRoomTemplate(): RoomSetup {
+    const w = this.roomSize.width;
+    const h = this.roomSize.height;
+    const wall = 24;
+    const doorW = 120;
+    const sideWallW = (w - doorW) / 2;
+
+    return {
+      roomIndex: this.totalRooms - 1,
+      roomName: 'Abyssal Arena - Exit Open',
+      entrance: null,
+      exit: {
+        side: 'top',
+        trigger: { x: w * 0.5, y: 36, width: doorW, height: 36 }
+      },
+      spawn: { x: w * 0.5, y: h * 0.8 },
+      spawnFacing: { x: 0, y: -1 },
+      entrySide: null,
+      walls: [
+        { x: sideWallW / 2, y: wall / 2, width: sideWallW, height: wall },
+        { x: w - sideWallW / 2, y: wall / 2, width: sideWallW, height: wall },
+        { x: w * 0.5, y: h - wall / 2, width: w, height: wall },
+        { x: wall / 2, y: h / 2, width: wall, height: h },
+        { x: w - wall / 2, y: h / 2, width: wall, height: h }
+      ],
+      obstacles: [],
+      enemyArchetypes: []
+    };
   }
 
   private buildLevel2StartRoomTemplate(): RoomSetup {
@@ -979,70 +1050,287 @@ export class GameScene extends Phaser.Scene {
 
   private runBossDefeatSequence(): void {
     if (!this.bossBlob) {
-      this.enterLevel2StartRoom();
+      this.openBossExitDoor();
       return;
     }
 
+    this.state = 'boss_defeat';
+    this.transitionCooldownUntil = this.time.now + 999999;
     this.bossPhase = 'stunned';
     this.bossPhaseUntil = this.time.now + 999999;
     this.bossArrow?.clear();
     this.bossShard?.destroy();
     this.bossShard = null;
     this.bossShardLaunched = false;
+    if (this.touchOverlap) {
+      this.touchOverlap.destroy();
+      this.touchOverlap = null;
+    }
 
     const boss = this.bossBlob;
     const bossBody = boss.body as Phaser.Physics.Arcade.Body;
     bossBody.setVelocity(0, 0);
     bossBody.enable = false;
-    this.spawnGeomBurst(boss.x, boss.y, 30, [0xff9a9a, 0xff6b6b, 0xd33a3a]);
-    this.tweens.add({
-      targets: boss,
-      alpha: 0,
-      scaleX: boss.scaleX * 1.2,
-      scaleY: boss.scaleY * 0.6,
-      duration: 950,
-      onComplete: () => {
-        if (boss.active) {
-          boss.destroy();
-        }
-        this.bossBlob = null;
-      }
-    });
 
     const living = this.enemies.getChildren() as Enemy[];
     for (const enemy of living) {
       const body = enemy.body as Phaser.Physics.Arcade.Body;
       body.setVelocity(0, 0);
       body.enable = false;
-      this.spawnGeomBurst(enemy.x, enemy.y, 8, [0xffb0b0, 0xff8f8f, 0xd45a5a]);
-      this.tweens.add({
-        targets: enemy,
-        alpha: 0,
-        duration: Phaser.Math.Between(500, 900),
-        onComplete: () => {
-          if (enemy.active) {
-            enemy.destroy();
-          }
+    }
+
+    living.forEach((enemy, index) => {
+      this.time.delayedCall(index * 250, () => {
+        if (!enemy.active) {
+          return;
         }
+        this.spawnGeomBurst(enemy.x, enemy.y, 12, [0xffb0b0, 0xff8f8f, 0xd45a5a]);
+        this.cameras.main.shake(180, 0.008);
+        enemy.destroy();
+      });
+    });
+
+    const minionPhaseMs = living.length * 250;
+    this.startEscalatingBossBlink(boss, Math.max(1200, minionPhaseMs + 1000));
+
+    const bossExplodeStart = minionPhaseMs + 220;
+    const burstCount = 7;
+    const burstStepMs = 140;
+    for (let i = 0; i < burstCount; i += 1) {
+      this.time.delayedCall(bossExplodeStart + i * burstStepMs, () => {
+        if (!boss.active) {
+          return;
+        }
+        const spread = 22 + i * 9;
+        const bx = boss.x + Phaser.Math.Between(-spread, spread);
+        const by = boss.y + Phaser.Math.Between(-spread, spread);
+        this.spawnGeomBurst(bx, by, 16 + i * 2, [0xff9a9a, 0xff6b6b, 0xd33a3a]);
+        this.cameras.main.shake(200 + i * 25, 0.012 + i * 0.0013);
       });
     }
 
-    const puddles = this.puddles.getChildren() as Phaser.GameObjects.Ellipse[];
-    for (const puddle of puddles) {
-      this.tweens.add({
-        targets: puddle,
-        alpha: 0,
-        duration: 350,
-        onComplete: () => puddle.destroy()
-      });
-    }
-
-    this.time.delayedCall(1000, () => {
-      if (this.state !== 'playing') {
+    this.time.delayedCall(bossExplodeStart + burstCount * burstStepMs + 80, () => {
+      if (!boss.active) {
         return;
       }
-      this.enterLevel2StartRoom();
+      this.spawnGeomBurst(boss.x, boss.y, 46, [0xffb5b5, 0xff6e6e, 0xd12f2f, 0xffecec]);
+      this.cameras.main.shake(900, 0.022);
+      boss.destroy();
+      this.bossBlob = null;
+      this.bossArrow?.clear();
+
+      const puddles = this.puddles.getChildren() as Phaser.GameObjects.Ellipse[];
+      for (const puddle of puddles) {
+        puddle.destroy();
+      }
+      this.puddles.clear(true, true);
+      this.enemies.clear(true, true);
+      this.openBossExitDoor();
     });
+  }
+
+  private startEscalatingBossBlink(boss: Phaser.Physics.Arcade.Sprite, durationMs: number): void {
+    const startedAt = this.time.now;
+
+    const blink = (): void => {
+      if (!boss.active || this.state !== 'boss_defeat') {
+        return;
+      }
+
+      const progress = Phaser.Math.Clamp((this.time.now - startedAt) / durationMs, 0, 1);
+      boss.setVisible(!boss.visible);
+      const pulse = Math.sin(this.time.now * 0.05) * 0.5 + 0.5;
+      boss.setTint(Phaser.Display.Color.GetColor(255, 90 + Math.floor(90 * pulse), 90 + Math.floor(90 * pulse)));
+      const delay = Phaser.Math.Linear(220, 34, progress);
+
+      if (progress >= 1) {
+        boss.setVisible(true);
+        boss.clearTint();
+        return;
+      }
+
+      this.time.delayedCall(delay, blink);
+    };
+
+    blink();
+  }
+
+  private openBossExitDoor(): void {
+    const px = this.player.x;
+    const py = this.player.y;
+    this.clearEnemies();
+    this.setup = this.buildBossEscapeRoomTemplate();
+    this.roomManager.loadRoom(this.setup);
+    this.player.setPosition(Phaser.Math.Clamp(px, 48, this.roomSize.width - 48), Phaser.Math.Clamp(py, 56, this.roomSize.height - 56));
+    this.player.body.setVelocity(0, 0);
+    this.player.setRoomMovement(0);
+    this.bossExitOpen = true;
+    this.checkpointAfterBossDoor = true;
+    this.state = 'playing';
+    this.transitionCooldownUntil = this.time.now + 320;
+    this.rebuildPhysics();
+    this.ui.showLevelSplash('LEVEL 2');
+    this.updateDebug();
+  }
+
+  private restorePostBossCheckpoint(): void {
+    this.escapeSpinTween?.stop();
+    this.escapeSpinTween = null;
+    this.clearWinPaint();
+    this.fastTrailNextAt = 0;
+    this.winTrailNextAt = 0;
+    this.winSparkleNextAt = 0;
+    this.state = 'playing';
+    this.level2Started = false;
+    this.level2TemplateLoaded = false;
+    this.level2RoomsRemaining = 0;
+    this.currentRoom = this.totalRooms - 1;
+
+    this.clearEnemies();
+    this.setup = this.buildBossEscapeRoomTemplate();
+    this.roomManager.loadRoom(this.setup);
+    this.player.resetAt(this.setup.spawn.x, this.setup.spawn.y, this.setup.spawnFacing);
+    this.player.setRoomMovement(0);
+    this.bossExitOpen = true;
+    this.transitionCooldownUntil = this.time.now + 350;
+    this.ui.hideResult();
+    this.rebuildPhysics();
+    this.ui.showLevelSplash('LEVEL 2');
+    this.updateDebug();
+  }
+
+  private advanceLevel2OrWin(): void {
+    if (this.level2RoomsRemaining <= 0) {
+      this.triggerEscapeWin();
+      return;
+    }
+
+    this.level2RoomsRemaining -= 1;
+  }
+
+  private triggerEscapeWin(): void {
+    if (this.state === 'won') {
+      return;
+    }
+
+    this.state = 'won';
+    this.destroyPhysicsLinks();
+    this.player.body.setCollideWorldBounds(true);
+    this.player.body.setBounce(1, 1);
+    this.player.body.setDrag(0, 0);
+    this.player.body.setMaxVelocity(1100, 1100);
+    const angleDeg = Phaser.Math.Between(38, 56);
+    const angle = Phaser.Math.DegToRad(angleDeg);
+    const xSign = Phaser.Math.Between(0, 1) === 0 ? -1 : 1;
+    const ySign = Phaser.Math.Between(0, 1) === 0 ? -1 : 1;
+    const speed = Phaser.Math.Between(860, 980);
+    this.player.body.setVelocity(Math.cos(angle) * speed * xSign, Math.sin(angle) * speed * ySign);
+    this.player.setDepth(70);
+    this.player.setAlpha(1);
+    this.player.clearTint();
+    this.winTrailNextAt = this.time.now;
+    this.winSparkleNextAt = this.time.now;
+    this.escapeSpinTween?.stop();
+    this.escapeSpinTween = this.tweens.add({
+      targets: this.player,
+      angle: { from: 0, to: 360 },
+      duration: 120,
+      repeat: -1
+    });
+    this.ui.showEscaped();
+    this.updateDebug();
+  }
+
+  private updateWinCelebration(): void {
+    if (this.time.now >= this.winTrailNextAt) {
+      this.winTrailNextAt = this.time.now + 26;
+      this.spawnWinPaintMark();
+    }
+    if (this.time.now >= this.winSparkleNextAt) {
+      this.winSparkleNextAt = this.time.now + 42;
+      this.spawnWinSparkles();
+    }
+  }
+
+  private spawnWinPaintMark(): void {
+    const colors = [0xff4f7f, 0xffc44d, 0x53e3ff, 0x8aff6a, 0xb585ff, 0xff7de8];
+    const color = colors[Phaser.Math.Between(0, colors.length - 1)];
+    const mark = this.createPlayerStamp(
+      this.player.x + Phaser.Math.Between(-8, 8),
+      this.player.y + Phaser.Math.Between(-8, 8),
+      color,
+      Phaser.Math.FloatBetween(0.4, 0.72),
+      58,
+      this.player.angle + Phaser.Math.Between(-120, 120),
+      Phaser.Math.FloatBetween(0.78, 1.08)
+    );
+    this.winPaintMarks.push(mark);
+  }
+
+  private spawnWinSparkles(): void {
+    for (let i = 0; i < 3; i += 1) {
+      const sparkle = this.add.rectangle(
+        this.player.x + Phaser.Math.Between(-18, 18),
+        this.player.y + Phaser.Math.Between(-18, 18),
+        Phaser.Math.Between(3, 7),
+        Phaser.Math.Between(3, 7),
+        0xffffff,
+        0.95
+      );
+      sparkle.setDepth(74);
+      this.tweens.add({
+        targets: sparkle,
+        alpha: 0,
+        scaleX: Phaser.Math.FloatBetween(1.4, 2.2),
+        scaleY: Phaser.Math.FloatBetween(1.4, 2.2),
+        angle: Phaser.Math.Between(-80, 80),
+        duration: Phaser.Math.Between(180, 320),
+        onComplete: () => sparkle.destroy()
+      });
+    }
+  }
+
+  private spawnSpeedTrailGhost(): void {
+    const ghost = this.createPlayerStamp(
+      this.player.x + Phaser.Math.Between(-4, 4),
+      this.player.y + Phaser.Math.Between(-4, 4),
+      0x8fd9ff,
+      0.26,
+      6,
+      this.player.angle + Phaser.Math.Between(-10, 10),
+      Phaser.Math.FloatBetween(0.92, 1.08)
+    );
+    this.tweens.add({
+      targets: ghost,
+      alpha: 0,
+      scaleX: ghost.scaleX * 0.82,
+      scaleY: ghost.scaleY * 0.82,
+      duration: 220,
+      onComplete: () => ghost.destroy()
+    });
+  }
+
+  private createPlayerStamp(
+    x: number,
+    y: number,
+    color: number,
+    alpha: number,
+    depth: number,
+    angle: number,
+    scale: number
+  ): Phaser.GameObjects.Polygon {
+    const stamp = this.add.polygon(x, y, [0, -20, 15, 0, 0, 20, -15, 0], color, alpha);
+    stamp.setDepth(depth);
+    stamp.setAngle(angle);
+    stamp.setScale(scale);
+    return stamp;
+  }
+
+  private clearWinPaint(): void {
+    for (const mark of this.winPaintMarks) {
+      mark.destroy();
+    }
+    this.winPaintMarks = [];
   }
 
   private spawnGeomBurst(x: number, y: number, count: number, colors: number[]): void {
@@ -1315,11 +1603,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private forceRestart(): void {
+    if (this.state === 'lost' && this.checkpointAfterBossDoor) {
+      this.restorePostBossCheckpoint();
+      return;
+    }
     window.location.reload();
   }
 
   private handleOverlayRestartClick(): void {
-    if (this.state === 'playing') {
+    if (this.state === 'playing' || this.state === 'boss_defeat') {
       return;
     }
     this.forceRestart();
