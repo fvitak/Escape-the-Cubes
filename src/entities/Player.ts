@@ -83,23 +83,26 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.body.setVelocity(0, 0);
     this.body.enable = false;
     this.setAngle(0);
-    this.setTint(0xff9b9b);
+    this.setTint(0xffd0d0);
+
+    const flashRing = this.scene.add.circle(this.x, this.y, 10, 0xffffff, 0.7);
+    flashRing.setDepth(this.depth + 2);
     this.scene.tweens.add({
-      targets: this,
-      scaleX: 1.2,
-      scaleY: 0.8,
-      angle: 7,
-      duration: 90,
-      yoyo: true
+      targets: flashRing,
+      radius: 68,
+      alpha: 0,
+      duration: 170,
+      ease: 'Quad.Out',
+      onComplete: () => flashRing.destroy()
     });
+
     this.scene.tweens.add({
       targets: this,
-      scaleX: 1.35,
-      scaleY: 0.2,
-      alpha: 0.92,
-      angle: -10,
-      duration: 210,
-      delay: 90
+      scaleX: 1.9,
+      scaleY: 1.9,
+      alpha: 0,
+      duration: 180,
+      ease: 'Quad.Out'
     });
   }
 
