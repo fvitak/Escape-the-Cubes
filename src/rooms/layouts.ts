@@ -91,6 +91,7 @@ function generateRoomObstacles(
 ): RectSpec[] {
   const density = DENSITY_BY_ROOM[roomIndex] ?? 0.3;
   const rand = mulberry32((roomIndex * 1000003 + layoutVariant * 97 + 73) >>> 0);
+  const exitPoint = { x: exit.trigger.x, y: exit.trigger.y };
 
   const spawnCell = worldToCell(spawn.x, spawn.y);
   const exitCell = worldToCell(exit.trigger.x, exit.trigger.y);
@@ -105,23 +106,32 @@ function generateRoomObstacles(
 
     const eligible = collectEligibleCells(protectedCells);
     const targetBlocks = Math.max(1, Math.floor(eligible.length * density));
+    const sectorLoads = new Array(9).fill(0);
+    const targetSectorLoad = Math.max(1, targetBlocks / 9);
     let placed = 0;
     let guards = 0;
 
     while (placed < targetBlocks && guards < 7000) {
       guards += 1;
-      const pick = eligible[Math.floor(rand() * eligible.length)];
+      const sizeRoll = rand();
+      const size = sizeRoll < 0.72 ? 1 : sizeRoll < 0.93 ? 2 : 3;
+      const pick = pickWeightedCell(
+        eligible,
+        blocked,
+        protectedCells,
+        size,
+        sectorLoads,
+        targetSectorLoad,
+        spawn,
+        exitPoint,
+        rand
+      );
       if (!pick) {
         break;
       }
 
-      const sizeRoll = rand();
-      const size = sizeRoll < 0.72 ? 1 : sizeRoll < 0.93 ? 2 : 3;
-      if (!canPlaceCluster(blocked, protectedCells, pick.col, pick.row, size)) {
-        continue;
-      }
-
       placed += placeCluster(blocked, pick.col, pick.row, size);
+      addSectorLoadForCluster(sectorLoads, pick.col, pick.row, size);
     }
 
     if (!hasPath(blocked, spawnCell, exitCell)) {
@@ -528,6 +538,88 @@ function collectEligibleCells(protectedCells: Set<string>): Array<{ col: number;
     }
   }
   return cells;
+}
+
+function pickWeightedCell(
+  cells: Array<{ col: number; row: number }>,
+  blocked: boolean[][],
+  protectedCells: Set<string>,
+  size: number,
+  sectorLoads: number[],
+  targetSectorLoad: number,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  rand: () => number
+): { col: number; row: number } | null {
+  const weighted: Array<{ col: number; row: number; weight: number }> = [];
+  let total = 0;
+
+  for (const cell of cells) {
+    if (!canPlaceCluster(blocked, protectedCells, cell.col, cell.row, size)) {
+      continue;
+    }
+
+    const center = cellCenter(cell.col, cell.row);
+    const pathDist = distancePointToSegment(center.x, center.y, start.x, start.y, end.x, end.y);
+    const nearPathBoost = Phaser.Math.Clamp(1 - pathDist / 220, 0, 1) * 1.4;
+
+    const centerDist = Phaser.Math.Distance.Between(center.x, center.y, ROOM_WIDTH / 2, ROOM_HEIGHT / 2);
+    const centerBoost = Phaser.Math.Clamp(1 - centerDist / 380, 0, 1) * 0.6;
+
+    const sector = sectorIndex(cell.col, cell.row);
+    const overload = Math.max(0, sectorLoads[sector] - targetSectorLoad);
+    const underloadBoost = sectorLoads[sector] < targetSectorLoad ? 0.25 : 0;
+    const loadPenalty = 1 + overload * 0.35;
+
+    const weight = ((1 + nearPathBoost + centerBoost + underloadBoost) / loadPenalty) * (0.85 + rand() * 0.3);
+    weighted.push({ col: cell.col, row: cell.row, weight });
+    total += weight;
+  }
+
+  if (weighted.length === 0 || total <= 0) {
+    return null;
+  }
+
+  let roll = rand() * total;
+  for (const candidate of weighted) {
+    roll -= candidate.weight;
+    if (roll <= 0) {
+      return { col: candidate.col, row: candidate.row };
+    }
+  }
+
+  const fallback = weighted[weighted.length - 1];
+  return { col: fallback.col, row: fallback.row };
+}
+
+function addSectorLoadForCluster(sectorLoads: number[], col: number, row: number, size: number): void {
+  for (let y = row; y < row + size; y += 1) {
+    for (let x = col; x < col + size; x += 1) {
+      sectorLoads[sectorIndex(x, y)] += 1;
+    }
+  }
+}
+
+function sectorIndex(col: number, row: number): number {
+  const xNorm = (col - 1) / Math.max(1, COLS - 2);
+  const yNorm = (row - 1) / Math.max(1, ROWS - 2);
+  const sx = Phaser.Math.Clamp(Math.floor(xNorm * 3), 0, 2);
+  const sy = Phaser.Math.Clamp(Math.floor(yNorm * 3), 0, 2);
+  return sy * 3 + sx;
+}
+
+function distancePointToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const lenSq = abx * abx + aby * aby;
+  if (lenSq <= 0.0001) {
+    return Phaser.Math.Distance.Between(px, py, ax, ay);
+  }
+
+  const t = Phaser.Math.Clamp(((px - ax) * abx + (py - ay) * aby) / lenSq, 0, 1);
+  const cx = ax + abx * t;
+  const cy = ay + aby * t;
+  return Phaser.Math.Distance.Between(px, py, cx, cy);
 }
 
 function rngPickFrom(candidates: Side[], rngPick: () => Side): Side {

@@ -30,7 +30,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   setRoomMovement(roomIndex: number): void {
-    this.maxSpeed = roomIndex === 0 ? 220 : 360;
+    this.maxSpeed = roomIndex === 0 ? 220 : 684;
     this.body.setMaxVelocity(this.maxSpeed, this.maxSpeed);
   }
 

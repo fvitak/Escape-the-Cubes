@@ -14,7 +14,6 @@ interface KeyBindings {
   a: Phaser.Input.Keyboard.Key;
   s: Phaser.Input.Keyboard.Key;
   d: Phaser.Input.Keyboard.Key;
-  space: Phaser.Input.Keyboard.Key;
   r: Phaser.Input.Keyboard.Key;
   m: Phaser.Input.Keyboard.Key;
   h: Phaser.Input.Keyboard.Key;
@@ -81,9 +80,6 @@ export class GameScene extends Phaser.Scene {
   private bossExitOpen = false;
   private level2Started = false;
   private level2TemplateLoaded = false;
-  private dashUntil = 0;
-  private dashFxUntil = 0;
-  private nextDashFxAt = 0;
 
   private debugBodiesEnabled = false;
   private debugGraphics: Phaser.GameObjects.Graphics | null = null;
@@ -162,17 +158,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const movement = this.collectMovement();
-    if (Phaser.Input.Keyboard.JustDown(this.keys.space)) {
-      this.dashUntil = this.time.now + 220;
-      this.dashFxUntil = this.time.now + 260;
-      this.nextDashFxAt = this.time.now;
-      this.cameras.main.shake(80, 0.002);
-    }
-    const dashScale = this.time.now < this.dashUntil ? 1.9 : 1;
-    this.player.updateMovement(movement, delta, dashScale);
-    if (this.time.now < this.dashFxUntil) {
-      this.spawnDashFx();
-    }
+    this.player.updateMovement(movement, delta);
     const playerBody = this.player.body as Phaser.Physics.Arcade.Body;
     if (this.bossBlob) {
       this.player.setFlipX(this.bossBlob.x < this.player.x);
@@ -249,13 +235,26 @@ export class GameScene extends Phaser.Scene {
       ],
       true
     );
-    g.lineStyle(2, 0x14395b, 0.85);
-    g.beginPath();
-    g.moveTo(size * 0.2, size * 0.5);
-    g.lineTo(size * 0.8, size * 0.5);
-    g.moveTo(size * 0.5, size * 0.24);
-    g.lineTo(size * 0.5, size * 0.76);
-    g.strokePath();
+    g.fillStyle(0x2d79bf, 0.55);
+    g.fillPoints(
+      [
+        { x: size * 0.22, y: size * 0.33 },
+        { x: size * 0.42, y: size * 0.33 },
+        { x: size * 0.72, y: size * 0.67 },
+        { x: size * 0.52, y: size * 0.67 }
+      ],
+      true
+    );
+    g.fillStyle(0xc6ebff, 0.28);
+    g.fillPoints(
+      [
+        { x: size * 0.32, y: size * 0.26 },
+        { x: size * 0.56, y: size * 0.22 },
+        { x: size * 0.76, y: size * 0.44 },
+        { x: size * 0.52, y: size * 0.48 }
+      ],
+      true
+    );
 
     g.generateTexture(key, size, size);
     g.destroy();
@@ -329,14 +328,13 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.cursors = keyboard.createCursorKeys();
-    const mapped = keyboard.addKeys('W,A,S,D,SPACE,R,M,H') as Record<string, Phaser.Input.Keyboard.Key>;
+    const mapped = keyboard.addKeys('W,A,S,D,R,M,H') as Record<string, Phaser.Input.Keyboard.Key>;
 
     this.keys = {
       w: mapped.W,
       a: mapped.A,
       s: mapped.S,
       d: mapped.D,
-      space: mapped.SPACE,
       r: mapped.R,
       m: mapped.M,
       h: mapped.H
@@ -723,23 +721,6 @@ export class GameScene extends Phaser.Scene {
     this.bossShardLaunched = false;
   }
 
-  private spawnDashFx(): void {
-    if (this.time.now < this.nextDashFxAt) {
-      return;
-    }
-    this.nextDashFxAt = this.time.now + 34;
-    const puff = this.add.circle(this.player.x, this.player.y + 8, 12, 0xd8f4ff, 0.42);
-    puff.setDepth(9);
-    this.tweens.add({
-      targets: puff,
-      alpha: 0,
-      scaleX: 1.7,
-      scaleY: 1.25,
-      duration: 180,
-      onComplete: () => puff.destroy()
-    });
-  }
-
   private hitBossWithShard(): void {
     if (!this.bossShard || !this.bossBlob || this.state !== 'playing' || !this.bossShardLaunched) {
       return;
@@ -1088,6 +1069,11 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    const minScale = 0.36;
+    const maxScale = 0.72;
+    const midScale = (minScale + maxScale) / 2;
+    const sizeOptions = [maxScale, midScale, minScale];
+
     const blockers = [...this.setup.walls, ...this.setup.obstacles];
     const center = new Phaser.Math.Vector2(this.bossBlob.x, this.bossBlob.y);
     const baseAngle = Phaser.Math.FloatBetween(0, Math.PI * 2);
@@ -1095,6 +1081,9 @@ export class GameScene extends Phaser.Scene {
 
     for (let i = 0; i < count; i += 1) {
       const launchAngle = baseAngle + step * i + Phaser.Math.FloatBetween(-0.38, 0.38);
+      const chunkScale = Phaser.Utils.Array.GetRandom(sizeOptions);
+      const speedRatio = (maxScale - chunkScale) / (maxScale - minScale);
+      const chunkSpeed = Phaser.Math.Linear(130, 250, speedRatio);
       let placed = false;
       for (let attempt = 0; attempt < 20; attempt += 1) {
         const angle = launchAngle + Phaser.Math.FloatBetween(-0.12, 0.12);
@@ -1108,10 +1097,10 @@ export class GameScene extends Phaser.Scene {
         }
 
         const chunk = new Enemy(this, x, y, 'red');
-        chunk.setScale(0.72);
-        chunk.startBallistic(new Phaser.Math.Vector2(Math.cos(launchAngle), Math.sin(launchAngle)), 130);
+        chunk.setScale(chunkScale);
+        chunk.startBallistic(new Phaser.Math.Vector2(Math.cos(launchAngle), Math.sin(launchAngle)), chunkSpeed);
         const chunkBody = chunk.body as Phaser.Physics.Arcade.Body;
-        chunkBody.setSize(chunk.width * 0.72, chunk.height * 0.72, true);
+        chunkBody.setSize(chunk.width * chunkScale, chunk.height * chunkScale, true);
         chunk.startShock(this.time.now, 180);
         this.enemies.add(chunk);
         placed = true;
@@ -1120,11 +1109,11 @@ export class GameScene extends Phaser.Scene {
 
       if (!placed) {
         const chunk = new Enemy(this, center.x, center.y, 'red');
-        chunk.setScale(0.72);
+        chunk.setScale(chunkScale);
         const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
-        chunk.startBallistic(new Phaser.Math.Vector2(Math.cos(angle), Math.sin(angle)), 130);
+        chunk.startBallistic(new Phaser.Math.Vector2(Math.cos(angle), Math.sin(angle)), chunkSpeed);
         const chunkBody = chunk.body as Phaser.Physics.Arcade.Body;
-        chunkBody.setSize(chunk.width * 0.72, chunk.height * 0.72, true);
+        chunkBody.setSize(chunk.width * chunkScale, chunk.height * chunkScale, true);
         chunk.startShock(this.time.now, 180);
         this.enemies.add(chunk);
       }
