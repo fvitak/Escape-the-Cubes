@@ -5,6 +5,8 @@ export class GameUI {
   private readonly debugText: Phaser.GameObjects.Text;
   private readonly overlayBackdrop: Phaser.GameObjects.Rectangle;
   private readonly overlayText: Phaser.GameObjects.Text;
+  private readonly openingTitle: Phaser.GameObjects.Text;
+  private readonly openingHint: Phaser.GameObjects.Text;
   private readonly bossBarBg: Phaser.GameObjects.Rectangle;
   private readonly bossChunks: Phaser.GameObjects.Rectangle[] = [];
 
@@ -29,6 +31,32 @@ export class GameUI {
     this.overlayText.setOrigin(0.5, 0.5);
     this.overlayText.setDepth(51);
     this.overlayText.setVisible(false);
+
+    this.openingTitle = scene.add.text(480, 292, 'You must escape!', {
+      fontSize: '68px',
+      color: '#eaf3ff',
+      fontStyle: '700',
+      stroke: '#0a1421',
+      strokeThickness: 8,
+      align: 'center'
+    });
+    this.openingTitle.setOrigin(0.5, 0.5);
+    this.openingTitle.setDepth(44);
+    this.openingTitle.setShadow(0, 6, '#00000088', 10, false, true);
+    this.openingTitle.setVisible(false);
+
+    this.openingHint = scene.add.text(480, 598, 'Press spacebar to dash', {
+      fontSize: '34px',
+      color: '#d2e5ff',
+      fontStyle: '600',
+      stroke: '#0a1421',
+      strokeThickness: 6,
+      align: 'center'
+    });
+    this.openingHint.setOrigin(0.5, 0.5);
+    this.openingHint.setDepth(44);
+    this.openingHint.setShadow(0, 4, '#00000077', 8, false, true);
+    this.openingHint.setVisible(false);
 
     this.bossBarBg = scene.add.rectangle(480, 616, 520, 18, 0x2a0f0f, 0.85);
     this.bossBarBg.setDepth(45);
@@ -68,6 +96,11 @@ export class GameUI {
   hideResult(): void {
     this.overlayBackdrop.setVisible(false);
     this.overlayText.setVisible(false);
+  }
+
+  setOpeningPromptVisible(visible: boolean): void {
+    this.openingTitle.setVisible(visible);
+    this.openingHint.setVisible(visible);
   }
 
   setBossHp(current: number, max: number, visible: boolean): void {

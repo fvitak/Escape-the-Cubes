@@ -229,22 +229,32 @@ export class GameScene extends Phaser.Scene {
     const g = this.add.graphics();
     const r = Math.max(6, Math.floor(size * 0.22));
 
-    g.fillStyle(0x87d8ff, 1);
+    g.fillStyle(0x7ccfff, 1);
     g.fillRoundedRect(0, 2, size, size - 2, r);
-    g.fillStyle(0x5db4eb, 0.95);
+    g.fillStyle(0x4e9de2, 0.96);
     g.fillRoundedRect(3, 5, size - 6, size - 9, r - 2);
-    g.fillStyle(0xffffff, 0.22);
-    g.fillRoundedRect(6, 7, Math.floor(size * 0.42), Math.floor(size * 0.24), r - 3);
-    g.fillStyle(0x000000, 0.18);
+    g.fillStyle(0xdff5ff, 0.22);
+    g.fillRoundedRect(6, 7, Math.floor(size * 0.55), Math.floor(size * 0.2), r - 3);
+    g.fillStyle(0x000000, 0.22);
     g.fillRoundedRect(5, size - 11, size - 10, 7, 4);
 
-    // Tiny face for a cuter look.
-    g.fillStyle(0x233147, 0.95);
-    g.fillCircle(size * 0.38, size * 0.56, 2.2);
-    g.fillCircle(size * 0.62, size * 0.56, 2.2);
-    g.lineStyle(1.5, 0x233147, 0.9);
+    // Faceted core and streaks for a cleaner, faceless look.
+    g.fillStyle(0x9de0ff, 0.8);
+    g.fillPoints(
+      [
+        { x: size * 0.5, y: size * 0.2 },
+        { x: size * 0.69, y: size * 0.5 },
+        { x: size * 0.5, y: size * 0.8 },
+        { x: size * 0.31, y: size * 0.5 }
+      ],
+      true
+    );
+    g.lineStyle(2, 0x14395b, 0.85);
     g.beginPath();
-    g.arc(size * 0.5, size * 0.64, size * 0.08, 0.15, Math.PI - 0.15, false);
+    g.moveTo(size * 0.2, size * 0.5);
+    g.lineTo(size * 0.8, size * 0.5);
+    g.moveTo(size * 0.5, size * 0.24);
+    g.lineTo(size * 0.5, size * 0.76);
     g.strokePath();
 
     g.generateTexture(key, size, size);
@@ -1240,6 +1250,7 @@ export class GameScene extends Phaser.Scene {
 
   private updateDebug(): void {
     const count = (this.enemies?.getLength?.() ?? 0) + (this.bossBlob ? 1 : 0);
+    this.ui.setOpeningPromptVisible(!this.level2Started && this.currentRoom === 0 && this.state === 'playing');
     this.ui.setDebug(
       this.currentRoom,
       this.setup?.entrance?.side ?? null,

@@ -61,6 +61,17 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (moving) {
       this.facing.set(this.body.velocity.x, this.body.velocity.y).normalize();
     }
+
+    const speed = this.body.velocity.length();
+    const speedRatio = Phaser.Math.Clamp(speed / Math.max(1, effectiveSpeed), 0, 1);
+    const targetAngle = Phaser.Math.Clamp(this.body.velocity.x * 0.055, -16, 16);
+    const targetScaleX = 1 + speedRatio * 0.2;
+    const targetScaleY = 1 - speedRatio * 0.1;
+    this.setAngle(Phaser.Math.Linear(this.angle, targetAngle, 0.28));
+    this.setScale(
+      Phaser.Math.Linear(this.scaleX, targetScaleX, moving ? 0.24 : 0.18),
+      Phaser.Math.Linear(this.scaleY, targetScaleY, moving ? 0.24 : 0.18)
+    );
   }
 
   playDead(): void {
