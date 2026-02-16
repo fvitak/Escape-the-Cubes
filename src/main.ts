@@ -3,6 +3,17 @@ import Phaser from 'phaser';
 import { GameScene } from './scenes/GameScene';
 
 function boot(): void {
+  document.body.classList.add('booting');
+
+  const hideBootLoading = (): void => {
+    document.body.classList.remove('booting');
+    const loader = document.getElementById('boot-loading');
+    loader?.remove();
+  };
+
+  window.addEventListener('dungeon-ready', hideBootLoading, { once: true });
+  window.setTimeout(hideBootLoading, 8000);
+
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent: 'app',

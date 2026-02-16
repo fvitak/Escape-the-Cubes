@@ -62,6 +62,7 @@ export class GameScene extends Phaser.Scene {
 
   private music: Phaser.Sound.BaseSound | null = null;
   private musicEnabled = true;
+  private musicLoading = false;
 
   private wallColliders: Phaser.Physics.Arcade.Collider[] = [];
   private doorOverlap: Phaser.Physics.Arcade.Collider | null = null;
@@ -89,10 +90,6 @@ export class GameScene extends Phaser.Scene {
 
   constructor() {
     super('game-scene');
-  }
-
-  preload(): void {
-    this.load.audio('dungeon-theme', 'audio/dungeon_theme.mp3');
   }
 
   create(): void {
@@ -128,6 +125,7 @@ export class GameScene extends Phaser.Scene {
     this.ui.hideResult();
     this.ui.setBossHp(0, 5, false);
     this.updateDebug();
+    window.dispatchEvent(new Event('dungeon-ready'));
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.destroyPhysicsLinks();
@@ -1170,8 +1168,34 @@ export class GameScene extends Phaser.Scene {
   private startMusic(): void {
     this.stopMusic();
     this.sound.mute = !this.musicEnabled;
-    this.music = this.sound.add('dungeon-theme', { loop: true, volume: 0.25 });
-    this.music.play();
+    if (this.cache.audio.exists('dungeon-theme')) {
+      this.music = this.sound.add('dungeon-theme', { loop: true, volume: 0.25 });
+      if (this.musicEnabled) {
+        this.music.play();
+      }
+      return;
+    }
+
+    if (this.musicLoading) {
+      return;
+    }
+
+    this.musicLoading = true;
+    this.load.audio('dungeon-theme', 'audio/dungeon_theme.mp3');
+    this.load.once(Phaser.Loader.Events.COMPLETE, () => {
+      this.musicLoading = false;
+      if (!this.scene.isActive()) {
+        return;
+      }
+      this.music = this.sound.add('dungeon-theme', { loop: true, volume: 0.25 });
+      if (this.musicEnabled) {
+        this.music.play();
+      }
+    });
+    this.load.once(Phaser.Loader.Events.FILE_LOAD_ERROR, () => {
+      this.musicLoading = false;
+    });
+    this.load.start();
   }
 
   private stopMusic(): void {

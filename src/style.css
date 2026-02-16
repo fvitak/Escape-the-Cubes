@@ -17,6 +17,22 @@ body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
+body.booting #app {
+  visibility: hidden;
+}
+
+#boot-loading {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #e3ebff;
+  background: radial-gradient(circle at 25% 20%, #212531 0%, #141820 50%, #0a0d12 100%);
+  font-size: 18px;
+  letter-spacing: 0.03em;
+  z-index: 1000;
+}
+
 #app {
   display: grid;
   place-items: center;
