@@ -52,7 +52,9 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private startGame(): void {
-    this.scene.start('game-scene');
+    // Pass explicit data: Phaser reuses the previous scene data when none is
+    // given, which would replay an editor test level here.
+    this.scene.start('game-scene', { testLevel: undefined });
   }
 
   private drawBackdrop(): void {
