@@ -345,6 +345,18 @@ export class GameScene extends Phaser.Scene {
     this.level2RoomsRemaining = 0;
     this.checkpointAfterBossDoor = false;
 
+    // The scene instance survives scene.restart(), so stale boss references
+    // from a previous run must be cleared or create()/update() will touch
+    // destroyed game objects.
+    this.bossBlob = null;
+    this.bossShard = null;
+    this.bossShardLaunched = false;
+    this.bossArrow = null;
+    this.bossPhase = 'patrol';
+    this.bossPhaseUntil = 0;
+    this.bossHp = 0;
+    this.musicLoading = false;
+
     this.rng = new Rng(createRunSeed());
     this.levels = this.testLevel ? [this.testLevel] : LevelStore.getActiveLevels();
     this.currentRoom = this.testLevel ? 1 : 0;
