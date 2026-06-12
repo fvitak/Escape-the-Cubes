@@ -170,10 +170,10 @@ export class EditorScene extends Phaser.Scene {
     this.makeToolbarButton(796, 30, 'SAVE', () => this.save(), 0x2f6db8, 0x8fc6ff);
     this.makeToolbarButton(884, 30, 'BACK', () => this.goBack());
 
-    this.statusText = this.add.text(620, 62, 'Left click: place · Right click: erase · Esc: cancel tool', {
+    this.statusText = this.add.text(946, 62, 'Left click: place · Right click: erase · Esc: cancel', {
       fontSize: '12px', color: '#5d6f8c'
     });
-    this.statusText.setOrigin(0, 0.5);
+    this.statusText.setOrigin(1, 0.5);
     this.statusText.setDepth(6);
 
     this.toastText = this.add.text(480 + SIDEBAR_W / 2, 628, '', { fontSize: '15px', color: '#9fe6a8', fontStyle: '700' });
