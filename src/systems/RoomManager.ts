@@ -134,7 +134,7 @@ export class RoomManager {
       return;
     }
 
-    const exitFill = setup.roomIndex >= 5 ? 0x7be38f : 0x67b8f4;
+    const exitFill = setup.finalExit ? 0x7be38f : 0x67b8f4;
     this.drawDoorVisual(setup.exit.trigger, 0x1e232e, exitFill, 0.74);
 
     this.doorTrigger = this.scene.add.rectangle(

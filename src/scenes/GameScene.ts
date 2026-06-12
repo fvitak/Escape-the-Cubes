@@ -1,13 +1,15 @@
 import Phaser from 'phaser';
 import { Enemy } from '../entities/Enemy';
 import { Player } from '../entities/Player';
-import { buildRoomSetup, randomExitSide, sideOptions } from '../rooms/layouts';
+import { levelToRoomSetup } from '../levels/convert';
+import { LevelStore } from '../levels/store';
+import type { LevelData } from '../levels/types';
+import { buildBossRoomSetup, buildStartRoomSetup } from '../rooms/layouts';
 import type { RoomSetup } from '../rooms/types';
 import { RoomManager } from '../systems/RoomManager';
 import { GameUI } from '../ui/GameUI';
 import { intersectsRect } from '../utils/math';
 import { createRunSeed, Rng } from '../utils/rng';
-import { oppositeSide, type Side } from '../utils/sides';
 
 interface KeyBindings {
   w: Phaser.Input.Keyboard.Key;
@@ -17,13 +19,20 @@ interface KeyBindings {
   r: Phaser.Input.Keyboard.Key;
   m: Phaser.Input.Keyboard.Key;
   h: Phaser.Input.Keyboard.Key;
+  esc: Phaser.Input.Keyboard.Key;
 }
 
 type PlayState = 'playing' | 'boss_defeat' | 'won' | 'lost';
 
 export class GameScene extends Phaser.Scene {
   private readonly roomSize = { width: 960, height: 640 };
-  private readonly totalRooms = 7;
+  private levels: LevelData[] = [];
+  private testLevel: LevelData | null = null;
+
+  private get totalRooms(): number {
+    // Test mode plays a single level; 3 keeps the door-transition guards happy.
+    return this.testLevel ? 3 : this.levels.length + 2;
+  }
 
   private keys!: KeyBindings;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -52,9 +61,6 @@ export class GameScene extends Phaser.Scene {
   private shockStatus = 'none';
 
   private currentRoom = 0;
-  private roomEntrances: Array<Side | null> = [];
-  private roomExits: Side[] = [];
-  private roomVariants: number[] = [];
   private setup!: RoomSetup;
 
   private rng!: Rng;
@@ -95,6 +101,10 @@ export class GameScene extends Phaser.Scene {
     super('game-scene');
   }
 
+  init(data: { testLevel?: LevelData } = {}): void {
+    this.testLevel = data.testLevel ?? null;
+  }
+
   create(): void {
     this.createShapeTextures();
     this.resetRunState();
@@ -108,12 +118,12 @@ export class GameScene extends Phaser.Scene {
     this.debugGraphics = this.add.graphics();
     this.debugGraphics.setDepth(100);
 
-    this.setup = buildRoomSetup(0, this.roomExits[0], this.roomEntrances[0], this.roomVariants[0]);
+    this.setup = this.buildSetupForRoom(this.currentRoom);
     this.roomManager.loadRoom(this.setup);
 
     this.player = new Player(this, this.setup.spawn.x, this.setup.spawn.y);
     this.player.resetAt(this.setup.spawn.x, this.setup.spawn.y, this.setup.spawnFacing);
-    this.player.setRoomMovement(0);
+    this.player.setRoomMovement(this.currentRoom);
 
     this.enemies = this.physics.add.group({ runChildUpdate: false });
     this.squishedObstacles = this.physics.add.staticGroup();
@@ -145,6 +155,11 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     if (Phaser.Input.Keyboard.JustDown(this.keys.r)) {
       this.forceRestart();
+      return;
+    }
+
+    if (Phaser.Input.Keyboard.JustDown(this.keys.esc)) {
+      this.exitToHub();
       return;
     }
 
@@ -331,15 +346,39 @@ export class GameScene extends Phaser.Scene {
     this.checkpointAfterBossDoor = false;
 
     this.rng = new Rng(createRunSeed());
-    this.roomEntrances = new Array(this.totalRooms).fill(null);
-    this.roomExits = new Array(this.totalRooms).fill('top') as Side[];
-    this.roomVariants = new Array(this.totalRooms).fill(0);
+    this.levels = this.testLevel ? [this.testLevel] : LevelStore.getActiveLevels();
+    this.currentRoom = this.testLevel ? 1 : 0;
+  }
 
-    this.roomExits[0] = 'top';
-    for (let i = 1; i < this.totalRooms; i += 1) {
-      this.roomEntrances[i] = oppositeSide(this.roomExits[i - 1]);
-      this.roomExits[i] = randomExitSide(() => this.rng.pick(sideOptions()), this.roomEntrances[i] as Side);
-      this.roomVariants[i] = this.rng.int(0, 10000);
+  private buildSetupForRoom(index: number): RoomSetup {
+    if (this.testLevel) {
+      return levelToRoomSetup(this.testLevel, 1, true);
+    }
+    if (index === 0) {
+      return buildStartRoomSetup();
+    }
+    if (index > this.levels.length) {
+      return buildBossRoomSetup(index);
+    }
+    return levelToRoomSetup(this.levels[index - 1], index, index === this.levels.length);
+  }
+
+  private completeTestLevel(): void {
+    if (this.state !== 'playing') {
+      return;
+    }
+    this.state = 'won';
+    this.player.body.setVelocity(0, 0);
+    this.ui.showTestClear();
+    this.time.delayedCall(900, () => this.exitToHub());
+  }
+
+  private exitToHub(): void {
+    this.stopMusic();
+    if (this.testLevel) {
+      this.scene.start('editor-scene', { resume: true });
+    } else {
+      this.scene.start('menu-scene');
     }
   }
 
@@ -359,7 +398,8 @@ export class GameScene extends Phaser.Scene {
       d: mapped.D,
       r: mapped.R,
       m: mapped.M,
-      h: mapped.H
+      h: mapped.H,
+      esc: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC)
     };
   }
 
@@ -543,6 +583,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private advanceRoom(): void {
+    if (this.testLevel) {
+      this.completeTestLevel();
+      return;
+    }
+
     if (this.level2TemplateLoaded) {
       this.advanceLevel2OrWin();
       return;
@@ -557,16 +602,8 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const previousExit = this.setup.exit?.side ?? this.roomExits[this.currentRoom];
     this.currentRoom += 1;
-
-    const isBossRoom = this.currentRoom >= this.totalRooms - 1;
-    this.setup = buildRoomSetup(
-      this.currentRoom,
-      this.roomExits[this.currentRoom],
-      isBossRoom ? null : oppositeSide(previousExit),
-      this.roomVariants[this.currentRoom]
-    );
+    this.setup = this.buildSetupForRoom(this.currentRoom);
     this.roomManager.loadRoom(this.setup);
 
     this.player.resetAt(this.setup.spawn.x, this.setup.spawn.y, this.setup.spawnFacing);
@@ -575,6 +612,10 @@ export class GameScene extends Phaser.Scene {
     this.clearEnemies();
     this.spawnEnemiesForCurrentRoom();
     this.setupBossRoom();
+
+    if (!this.setup.isBossRoom) {
+      this.ui.showLevelSplash(this.setup.roomName);
+    }
 
     if (this.currentRoom === 1 && !this.music) {
       this.startMusic();
@@ -686,7 +727,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setupTestPortal(): void {
-    if (this.currentRoom !== 0 || this.level2Started || this.state !== 'playing') {
+    if (this.currentRoom !== 0 || this.level2Started || this.state !== 'playing' || this.testLevel) {
+      return;
+    }
+    if (!new URLSearchParams(window.location.search).has('boss')) {
       return;
     }
 
@@ -719,12 +763,7 @@ export class GameScene extends Phaser.Scene {
   private warpToBossRoom(): void {
     this.startMusic();
     this.currentRoom = this.totalRooms - 1;
-    this.setup = buildRoomSetup(
-      this.currentRoom,
-      this.roomExits[this.currentRoom],
-      null,
-      this.roomVariants[this.currentRoom]
-    );
+    this.setup = this.buildSetupForRoom(this.currentRoom);
     this.roomManager.loadRoom(this.setup);
     this.player.resetAt(this.setup.spawn.x, this.setup.spawn.y, this.setup.spawnFacing);
     this.player.setRoomMovement(this.currentRoom);
@@ -827,6 +866,7 @@ export class GameScene extends Phaser.Scene {
       roomIndex: this.totalRooms - 1,
       roomName: 'Abyssal Arena - Exit Open',
       entrance: null,
+      finalExit: true,
       exit: {
         side: 'top',
         trigger: { x: w * 0.5, y: 36, width: doorW, height: 36 }
@@ -1520,14 +1560,14 @@ export class GameScene extends Phaser.Scene {
     this.player.playDead();
     this.playDeathExplosion(this.player.x, this.player.y);
     this.time.delayedCall(520, () => {
-      this.ui.showResult(false);
+      this.ui.showResult(false, this.testLevel ? 'R: Retry · Esc: Back to Editor' : undefined);
     });
     this.updateDebug();
   }
 
   private updateDebug(): void {
     const count = (this.enemies?.getLength?.() ?? 0) + (this.bossBlob ? 1 : 0);
-    this.ui.setOpeningPromptVisible(!this.level2Started && this.currentRoom === 0 && this.state === 'playing');
+    this.ui.setOpeningPromptVisible(!this.testLevel && !this.level2Started && this.currentRoom === 0 && this.state === 'playing');
     this.ui.setDebug(
       this.currentRoom,
       this.setup?.entrance?.side ?? null,
@@ -1607,7 +1647,7 @@ export class GameScene extends Phaser.Scene {
       this.restorePostBossCheckpoint();
       return;
     }
-    window.location.reload();
+    this.scene.restart({ testLevel: this.testLevel ?? undefined });
   }
 
   private handleOverlayRestartClick(): void {

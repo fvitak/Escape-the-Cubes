@@ -8,6 +8,8 @@ export class GameUI {
   private readonly overlaySubText: Phaser.GameObjects.Text;
   private readonly openingLevel: Phaser.GameObjects.Text;
   private readonly openingTitle: Phaser.GameObjects.Text;
+  private readonly openingInstructions: Phaser.GameObjects.Text;
+  private readonly openingHints: Phaser.GameObjects.Text;
   private readonly levelSplash: Phaser.GameObjects.Text;
   private readonly bossBarBg: Phaser.GameObjects.Rectangle;
   private readonly bossChunks: Phaser.GameObjects.Rectangle[] = [];
@@ -68,6 +70,33 @@ export class GameUI {
     this.openingTitle.setShadow(0, 6, '#00000088', 10, false, true);
     this.openingTitle.setVisible(false);
 
+    this.openingInstructions = scene.add.text(
+      480,
+      436,
+      'WASD or Arrow Keys to move\nGo through the glowing door above\nTouching a cube = instant death!',
+      {
+        fontSize: '24px',
+        color: '#cfe2ff',
+        align: 'center',
+        stroke: '#0a1421',
+        strokeThickness: 5,
+        lineSpacing: 10
+      }
+    );
+    this.openingInstructions.setOrigin(0.5, 0.5);
+    this.openingInstructions.setDepth(44);
+    this.openingInstructions.setShadow(0, 4, '#00000088', 6, false, true);
+    this.openingInstructions.setVisible(false);
+
+    this.openingHints = scene.add.text(480, 548, 'M: music   ·   R: restart   ·   Esc: menu', {
+      fontSize: '17px',
+      color: '#8fa3c2',
+      align: 'center'
+    });
+    this.openingHints.setOrigin(0.5, 0.5);
+    this.openingHints.setDepth(44);
+    this.openingHints.setVisible(false);
+
     this.levelSplash = scene.add.text(480, 172, '', {
       fontSize: '56px',
       color: '#ecf6ff',
@@ -109,7 +138,7 @@ export class GameUI {
     );
   }
 
-  showResult(win: boolean): void {
+  showResult(win: boolean, subTextOverride?: string): void {
     this.overlayBackdrop.setDepth(50);
     this.overlayText.setDepth(51);
     this.overlaySubText.setDepth(52);
@@ -117,7 +146,18 @@ export class GameUI {
     this.overlayText.setVisible(true);
     this.overlaySubText.setVisible(true);
     this.overlayText.setText(win ? 'YOU WIN' : 'YOU LOSE');
-    this.overlaySubText.setText(win ? 'Press Enter or Click to Restart' : 'Press Enter to Restart');
+    this.overlaySubText.setText(subTextOverride ?? (win ? 'Press Enter or Click to Restart' : 'Press Enter to Restart'));
+  }
+
+  showTestClear(): void {
+    this.overlayBackdrop.setDepth(50);
+    this.overlayText.setDepth(51);
+    this.overlaySubText.setDepth(52);
+    this.overlayBackdrop.setVisible(true);
+    this.overlayText.setVisible(true);
+    this.overlaySubText.setVisible(true);
+    this.overlayText.setText('LEVEL CLEAR');
+    this.overlaySubText.setText('Returning to editor...');
   }
 
   showEscaped(): void {
@@ -141,6 +181,8 @@ export class GameUI {
   setOpeningPromptVisible(visible: boolean): void {
     this.openingLevel.setVisible(visible);
     this.openingTitle.setVisible(visible);
+    this.openingInstructions.setVisible(visible);
+    this.openingHints.setVisible(visible);
   }
 
   showLevelSplash(label: string, durationMs = 1450): void {

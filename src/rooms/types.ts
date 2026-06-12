@@ -19,6 +19,7 @@ export interface RoomSetup {
   entrance: DoorSpec | null;
   exit: DoorSpec | null;
   isBossRoom?: boolean;
+  finalExit?: boolean;
   spawn: { x: number; y: number };
   spawnFacing: { x: number; y: number };
   entrySide: Side | null;

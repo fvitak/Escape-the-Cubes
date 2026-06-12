@@ -1,6 +1,9 @@
 import './style.css';
 import Phaser from 'phaser';
+import { EditHubScene } from './scenes/EditHubScene';
+import { EditorScene } from './scenes/EditorScene';
 import { GameScene } from './scenes/GameScene';
+import { MenuScene } from './scenes/MenuScene';
 
 function boot(): void {
   document.body.classList.add('booting');
@@ -33,7 +36,7 @@ function boot(): void {
         debug: false
       }
     },
-    scene: [new GameScene()]
+    scene: [new MenuScene(), new GameScene(), new EditHubScene(), new EditorScene()]
   });
 
   void game;
