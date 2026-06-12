@@ -475,13 +475,13 @@ export class EditorScene extends Phaser.Scene {
     const cells = new Set<string>();
     const mark = (side: Side): void => {
       if (side === 'top') {
-        for (let c = 8; c <= 11; c += 1) for (let r = 1; r <= 2; r += 1) cells.add(`${c}:${r}`);
+        for (let c = 8; c <= 11; c += 1) for (let r = 0; r <= 2; r += 1) cells.add(`${c}:${r}`);
       } else if (side === 'bottom') {
-        for (let c = 8; c <= 11; c += 1) for (let r = GRID_ROWS - 3; r <= GRID_ROWS - 2; r += 1) cells.add(`${c}:${r}`);
+        for (let c = 8; c <= 11; c += 1) for (let r = GRID_ROWS - 3; r <= GRID_ROWS - 1; r += 1) cells.add(`${c}:${r}`);
       } else if (side === 'left') {
-        for (let c = 1; c <= 2; c += 1) for (let r = 5; r <= 7; r += 1) cells.add(`${c}:${r}`);
+        for (let c = 0; c <= 2; c += 1) for (let r = 5; r <= 7; r += 1) cells.add(`${c}:${r}`);
       } else {
-        for (let c = GRID_COLS - 3; c <= GRID_COLS - 2; c += 1) for (let r = 5; r <= 7; r += 1) cells.add(`${c}:${r}`);
+        for (let c = GRID_COLS - 3; c <= GRID_COLS - 1; c += 1) for (let r = 5; r <= 7; r += 1) cells.add(`${c}:${r}`);
       }
     };
     mark(this.entrance);
@@ -490,7 +490,7 @@ export class EditorScene extends Phaser.Scene {
   }
 
   private canPlaceBlock(col: number, row: number, size: number): boolean {
-    if (col < 1 || row < 1 || col + size > GRID_COLS - 1 || row + size > GRID_ROWS - 1) {
+    if (col < 0 || row < 0 || col + size > GRID_COLS || row + size > GRID_ROWS) {
       return false;
     }
     const occupied = this.occupiedCells();
